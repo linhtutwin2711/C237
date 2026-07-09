@@ -1,6 +1,22 @@
 const mysql = require('mysql2');
 const express = require('express');
 const app = express();
+const multer=require('multer');
+const fs = require('fs');
+const path = require('path');
+
+// Set up multer for file uploads.
+// Use memoryStorage: the upload is held in RAM and only written to disk AFTER the
+// request is fully received. This avoids destroying a file when you pick an image
+// that already lives in public/images (writing while it's still being read).
+const upload = multer({ storage: multer.memoryStorage() });
+
+// Save an uploaded file (buffered in memory) to public/images and return its filename.
+function saveUploadedImage(file) {
+  fs.writeFileSync(path.join('public', 'images', file.originalname), file.buffer);
+  return file.originalname;
+}
+
 
 // Tell Express to use EJS for rendering views
 app.set('view engine', 'ejs');
@@ -55,9 +71,15 @@ app.get('/addProduct', (req, res) => {
   res.render('addProduct'); 
 });
 
-app.post('/addProduct', (req, res) => {
-  // Extract product data from the request body
-  const { name, quantity, price, image } = req.body;
+app.post('/addProduct', upload.single('image'), (req, res) => {
+  const { name, quantity, price } = req.body;
+  let image;
+  if (req.file) {
+    image = saveUploadedImage(req.file); // write the buffered upload to disk, keep original name
+  } else {
+    image = null;
+  }
+
   const sql = 'INSERT INTO products (productName, quantity, price, image) VALUES (?, ?, ?, ?)';
   // Insert the new product into the database
   connection.query( sql , [name, quantity, price, image], (error, results) => {
@@ -92,13 +114,17 @@ app.get('/editProduct/:id', (req,res) => {
   });
 });
 
-app.post('/editProduct/:id', (req, res) => {
+app.post('/editProduct/:id', upload.single('image'), (req, res) => {
   const productId = req.params.id;
   // Extract product data from the request body
   const { name, quantity, price } = req.body;
-  const sql = 'UPDATE products SET productName = ? , quantity = ?, price = ? WHERE productId = ?';
+  let image = req.body.currentImage; //retrieve current image filename
+  if (req.file) { //if new image is uploaded
+    image = saveUploadedImage(req.file); // write the buffered upload to disk, keep original name
+  }
+  const sql = 'UPDATE products SET productName = ? , quantity = ?, price = ?, image = ? WHERE productId = ?';
   // Insert the new product into the database
-  connection.query( sql , [name, quantity, price, productId], (error, results) => {
+  connection.query( sql , [name, quantity, price, image, productId], (error, results) => {
     if (error) {
       // Handle any error that occurs during the database operation
       console.error("Error updating product:", error);
